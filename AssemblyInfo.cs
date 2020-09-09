@@ -4,4 +4,4 @@ using System.Diagnostics;
 using System.Reflection;
 
 [assembly: AssemblyVersion("0.0.0.0")]
-[assembly: Debuggable(false, true)]
+[assembly: Debuggable(true, true)]
