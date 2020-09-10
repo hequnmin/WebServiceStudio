@@ -15,6 +15,7 @@ namespace WebServiceStudio
 {
     public class MainForm : Form
     {
+        #region Constants & Variants
         private static bool isV1;
         private static MainForm mainForm;
 
@@ -23,6 +24,11 @@ namespace WebServiceStudio
 
         private readonly Container components = null;
 
+        private Wsdl wsdl;
+        private delegate void WsdlGenerationDoneCallback(bool genDone);
+        #endregion
+
+        #region Controls
         private Button buttonBrowseFile;
         private Button buttonGet;
         private Button buttonInvoke;
@@ -82,13 +88,22 @@ namespace WebServiceStudio
         private TreeView treeMethods;
         private TreeView treeOutput;
         private TreeView treeWsdl;
-        private Wsdl wsdl;
+        #endregion
 
+        #region Constructors & Destructors
         public MainForm()
         {
             InitializeComponent();
             wsdl = new Wsdl();
             CheckForIllegalCrossThreadCalls = false;
+        }
+        #endregion
+
+        #region Events
+        private void MainForm_SizeChanged(object sender, EventArgs e)
+        {
+            tabMain.Width = (base.Location.X + base.Width) - tabMain.Location.X;
+            tabMain.Height = (base.Location.Y + base.Height) - tabMain.Location.Y;
         }
 
         private void buttonBrowseFile_Click(object sender, EventArgs e)
@@ -142,6 +157,194 @@ namespace WebServiceStudio
             SendWebRequest();
         }
 
+        private void PanelLeftRaw_SizeChanged(object sender, EventArgs e)
+        {
+            propRequest.SetBounds(0, 0, panelLeftRaw.Width, panelLeftRaw.Height, BoundsSpecified.Size);
+        }
+
+        private void PanelRightInvoke_SizeChanged(object sender, EventArgs e)
+        {
+            int width = (panelRightInvoke.Width - 0x18) / 2;
+            int x = 8;
+            int num3 = (8 + width) + 8;
+            int height = (((panelRightInvoke.Height - 0x10) - 20) - 40) / 2;
+            int y = 8;
+            int num6 = (0x1c + height) + 20;
+            labelInput.SetBounds(x, y, 0, 0, BoundsSpecified.Location);
+            labelInputValue.SetBounds(num3, y, 0, 0, BoundsSpecified.Location);
+            labelOutput.SetBounds(x, num6, 0, 0, BoundsSpecified.Location);
+            labelOutputValue.SetBounds(num3, num6, 0, 0, BoundsSpecified.Location);
+            y += 20;
+            num6 += 20;
+            treeInput.SetBounds(x, y, width, height, BoundsSpecified.All);
+            treeOutput.SetBounds(x, num6, width, height, BoundsSpecified.All);
+            propInput.SetBounds(num3, y, width, height, BoundsSpecified.All);
+            propOutput.SetBounds(num3, num6, width, height, BoundsSpecified.All);
+            buttonInvoke.SetBounds((num3 + width) - buttonInvoke.Width,
+                ((panelRightInvoke.Height + 20) - buttonInvoke.Height) / 2, 0, 0, BoundsSpecified.Location);
+        }
+
+        private void PanelRightRaw_SizeChanged(object sender, EventArgs e)
+        {
+            int width = panelRightRaw.Width - 0x10;
+            int x = 8;
+            int height = (((panelRightRaw.Height - 0x10) - 20) - 40) / 2;
+            int y = 8;
+            int num5 = (0x1c + height) + 20;
+            labelRequest.SetBounds(x, y, 0, 0, BoundsSpecified.Location);
+            labelResponse.SetBounds(x, num5, 0, 0, BoundsSpecified.Location);
+            y += 20;
+            num5 += 20;
+            richRequest.SetBounds(x, y, width, height, BoundsSpecified.All);
+            richResponse.SetBounds(x, num5, width, height, BoundsSpecified.All);
+            buttonSend.SetBounds((x + width) - buttonSend.Width, ((panelRightRaw.Height + 20) - buttonSend.Height) / 2, 0,
+                0, BoundsSpecified.Location);
+        }
+
+        private void propInput_PropertyValueChanged(object s, PropertyValueChangedEventArgs e)
+        {
+            var selectedObject = propInput.SelectedObject as TreeNodeProperty;
+            if ((selectedObject != null) && ((e.ChangedItem.Label == "Type") && (e.OldValue != selectedObject.Type)))
+            {
+                TreeNodeProperty property2 = TreeNodeProperty.CreateTreeNodeProperty(selectedObject);
+                property2.TreeNode = selectedObject.TreeNode;
+                property2.RecreateSubtree(null);
+                treeInput.SelectedNode = property2.TreeNode;
+            }
+        }
+
+        private void tabMain_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (tabMain.SelectedTab == tabPageRaw)
+            {
+                if (propRequest.SelectedObject == null)
+                {
+                    propRequest.SelectedObject = new RequestProperties(null);
+                }
+            }
+            else if (((tabMain.SelectedTab == tabPageWsdl) && (treeWsdl.Nodes != null)) && (treeWsdl.Nodes.Count != 0))
+            {
+                TreeNode node = treeWsdl.Nodes[3];
+                node.Tag = GenerateClientCode();
+                if (treeWsdl.SelectedNode == node)
+                {
+                    richWsdl.Text = node.Tag.ToString();
+                }
+            }
+        }
+
+        private void textEndPointUri_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            if ((e.KeyChar == '\r') || (e.KeyChar == '\n'))
+            {
+                buttonGet_Click(sender, null);
+                e.Handled = true;
+            }
+            else if (!char.IsControl(e.KeyChar))
+            {
+                if (!isV1)
+                {
+                    textEndPointUri.SelectedText = e.KeyChar.ToString();
+                }
+                e.Handled = true;
+                string text = textEndPointUri.Text;
+                if ((text != null) && (text.Length != 0))
+                {
+                    for (int i = 0; i < textEndPointUri.Items.Count; i++)
+                    {
+                        if (((string)textEndPointUri.Items[i]).StartsWith(text))
+                        {
+                            textEndPointUri.SelectedIndex = i;
+                            textEndPointUri.Select(text.Length, textEndPointUri.Text.Length);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        private void treeInput_AfterSelect(object sender, TreeViewEventArgs e)
+        {
+            propInput.SelectedObject = e.Node.Tag;
+            menuItemTreeInputCopy.Enabled = IsValidCopyNode(e.Node.Tag as TreeNodeProperty);
+            menuItemTreeInputPaste.Enabled = IsValidPasteNode(e.Node.Tag as TreeNodeProperty);
+        }
+
+        private void treeInputMenuCopy_Click(object sender, EventArgs e)
+        {
+            CopyToClipboard(treeInput.SelectedNode.Tag as TreeNodeProperty);
+        }
+
+        private void treeInputMenuPaste_Click(object sender, EventArgs e)
+        {
+            var tag = treeInput.SelectedNode.Tag as TreeNodeProperty;
+            if (tag is MethodProperty)
+            {
+                throw new Exception("Paste not valid on method");
+            }
+            Type[] typeList = tag.GetTypeList();
+            Type type = typeof(DataSet).IsAssignableFrom(typeList[0]) ? typeof(DataSet) : typeof(object);
+            var serializer = new XmlSerializer(type, typeList);
+            var textReader = new StringReader((string)Clipboard.GetDataObject().GetData(DataFormats.Text));
+            object val = serializer.Deserialize(textReader);
+            if ((val == null) || !typeList[0].IsAssignableFrom(val.GetType()))
+            {
+                throw new Exception("Invalid Type pasted");
+            }
+            TreeNodeProperty property2 = TreeNodeProperty.CreateTreeNodeProperty(tag, val);
+            property2.TreeNode = tag.TreeNode;
+            property2.RecreateSubtree(null);
+            treeInput.SelectedNode = property2.TreeNode;
+        }
+
+        private void treeMethods_AfterSelect(object sender, TreeViewEventArgs e)
+        {
+            if (e.Node.Tag is MethodInfo)
+            {
+                var tag = e.Node.Tag as MethodInfo;
+                treeInput.Nodes.Clear();
+                var property = new MethodProperty(GetProxyPropertyFromNode(e.Node), tag);
+                property.RecreateSubtree(null);
+                treeInput.Nodes.Add(property.TreeNode);
+                e.Node.Tag = property.TreeNode;
+            }
+            else if (e.Node.Tag is TreeNode)
+            {
+                treeInput.Nodes.Clear();
+                treeInput.Nodes.Add((TreeNode)e.Node.Tag);
+            }
+            treeInput.ExpandAll();
+            treeInput.SelectedNode = treeInput.Nodes[0];
+        }
+
+        private void treeOutput_AfterSelect(object sender, TreeViewEventArgs e)
+        {
+            propOutput.SelectedObject = e.Node.Tag;
+            menuItemTreeOutputCopy.Enabled = IsValidCopyNode(e.Node.Tag as TreeNodeProperty);
+        }
+
+        private void treeOutputMenuCopy_Click(object sender, EventArgs e)
+        {
+            CopyToClipboard(treeOutput.SelectedNode.Tag as TreeNodeProperty);
+        }
+
+        private void treeWsdl_AfterSelect(object sender, TreeViewEventArgs e)
+        {
+            if ((e.Node.Tag != null) && (richWsdl.Tag != e.Node.Tag))
+            {
+                richWsdl.Text = e.Node.Tag.ToString();
+                richWsdl.Tag = e.Node.Tag;
+            }
+            var node = e.Node as XmlTreeNode;
+            if (node != null)
+            {
+                richWsdl.Select(node.StartPosition, node.EndPosition - node.StartPosition);
+            }
+        }
+
+        #endregion
+
+        #region Methods
         private void ClearAllTabs()
         {
             richWsdl.Clear();
@@ -781,12 +984,6 @@ namespace WebServiceStudio
             Application.Run(mainForm);
         }
 
-        private void MainForm_SizeChanged(object sender, EventArgs e)
-        {
-            tabMain.Width = (base.Location.X + base.Width) - tabMain.Location.X;
-            tabMain.Height = (base.Location.Y + base.Height) - tabMain.Location.Y;
-        }
-
         private void menuItemAbout_Click(object sender, EventArgs e)
         {
             MessageBox.Show(this,
@@ -906,62 +1103,6 @@ namespace WebServiceStudio
                 return proxyAssembly;
             }
             return null;
-        }
-
-        private void PanelLeftRaw_SizeChanged(object sender, EventArgs e)
-        {
-            propRequest.SetBounds(0, 0, panelLeftRaw.Width, panelLeftRaw.Height, BoundsSpecified.Size);
-        }
-
-        private void PanelRightInvoke_SizeChanged(object sender, EventArgs e)
-        {
-            int width = (panelRightInvoke.Width - 0x18)/2;
-            int x = 8;
-            int num3 = (8 + width) + 8;
-            int height = (((panelRightInvoke.Height - 0x10) - 20) - 40)/2;
-            int y = 8;
-            int num6 = (0x1c + height) + 20;
-            labelInput.SetBounds(x, y, 0, 0, BoundsSpecified.Location);
-            labelInputValue.SetBounds(num3, y, 0, 0, BoundsSpecified.Location);
-            labelOutput.SetBounds(x, num6, 0, 0, BoundsSpecified.Location);
-            labelOutputValue.SetBounds(num3, num6, 0, 0, BoundsSpecified.Location);
-            y += 20;
-            num6 += 20;
-            treeInput.SetBounds(x, y, width, height, BoundsSpecified.All);
-            treeOutput.SetBounds(x, num6, width, height, BoundsSpecified.All);
-            propInput.SetBounds(num3, y, width, height, BoundsSpecified.All);
-            propOutput.SetBounds(num3, num6, width, height, BoundsSpecified.All);
-            buttonInvoke.SetBounds((num3 + width) - buttonInvoke.Width,
-                ((panelRightInvoke.Height + 20) - buttonInvoke.Height)/2, 0, 0, BoundsSpecified.Location);
-        }
-
-        private void PanelRightRaw_SizeChanged(object sender, EventArgs e)
-        {
-            int width = panelRightRaw.Width - 0x10;
-            int x = 8;
-            int height = (((panelRightRaw.Height - 0x10) - 20) - 40)/2;
-            int y = 8;
-            int num5 = (0x1c + height) + 20;
-            labelRequest.SetBounds(x, y, 0, 0, BoundsSpecified.Location);
-            labelResponse.SetBounds(x, num5, 0, 0, BoundsSpecified.Location);
-            y += 20;
-            num5 += 20;
-            richRequest.SetBounds(x, y, width, height, BoundsSpecified.All);
-            richResponse.SetBounds(x, num5, width, height, BoundsSpecified.All);
-            buttonSend.SetBounds((x + width) - buttonSend.Width, ((panelRightRaw.Height + 20) - buttonSend.Height)/2, 0,
-                0, BoundsSpecified.Location);
-        }
-
-        private void propInput_PropertyValueChanged(object s, PropertyValueChangedEventArgs e)
-        {
-            var selectedObject = propInput.SelectedObject as TreeNodeProperty;
-            if ((selectedObject != null) && ((e.ChangedItem.Label == "Type") && (e.OldValue != selectedObject.Type)))
-            {
-                TreeNodeProperty property2 = TreeNodeProperty.CreateTreeNodeProperty(selectedObject);
-                property2.TreeNode = selectedObject.TreeNode;
-                property2.RecreateSubtree(null);
-                treeInput.SelectedNode = property2.TreeNode;
-            }
         }
 
         private bool SaveFile(string fileName, string contents)
@@ -1121,135 +1262,6 @@ namespace WebServiceStudio
             }
         }
 
-        private void tabMain_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (tabMain.SelectedTab == tabPageRaw)
-            {
-                if (propRequest.SelectedObject == null)
-                {
-                    propRequest.SelectedObject = new RequestProperties(null);
-                }
-            }
-            else if (((tabMain.SelectedTab == tabPageWsdl) && (treeWsdl.Nodes != null)) && (treeWsdl.Nodes.Count != 0))
-            {
-                TreeNode node = treeWsdl.Nodes[3];
-                node.Tag = GenerateClientCode();
-                if (treeWsdl.SelectedNode == node)
-                {
-                    richWsdl.Text = node.Tag.ToString();
-                }
-            }
-        }
-
-        private void textEndPointUri_KeyPress(object sender, KeyPressEventArgs e)
-        {
-            if ((e.KeyChar == '\r') || (e.KeyChar == '\n'))
-            {
-                buttonGet_Click(sender, null);
-                e.Handled = true;
-            }
-            else if (!char.IsControl(e.KeyChar))
-            {
-                if (!isV1)
-                {
-                    textEndPointUri.SelectedText = e.KeyChar.ToString();
-                }
-                e.Handled = true;
-                string text = textEndPointUri.Text;
-                if ((text != null) && (text.Length != 0))
-                {
-                    for (int i = 0; i < textEndPointUri.Items.Count; i++)
-                    {
-                        if (((string) textEndPointUri.Items[i]).StartsWith(text))
-                        {
-                            textEndPointUri.SelectedIndex = i;
-                            textEndPointUri.Select(text.Length, textEndPointUri.Text.Length);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        private void treeInput_AfterSelect(object sender, TreeViewEventArgs e)
-        {
-            propInput.SelectedObject = e.Node.Tag;
-            menuItemTreeInputCopy.Enabled = IsValidCopyNode(e.Node.Tag as TreeNodeProperty);
-            menuItemTreeInputPaste.Enabled = IsValidPasteNode(e.Node.Tag as TreeNodeProperty);
-        }
-
-        private void treeInputMenuCopy_Click(object sender, EventArgs e)
-        {
-            CopyToClipboard(treeInput.SelectedNode.Tag as TreeNodeProperty);
-        }
-
-        private void treeInputMenuPaste_Click(object sender, EventArgs e)
-        {
-            var tag = treeInput.SelectedNode.Tag as TreeNodeProperty;
-            if (tag is MethodProperty)
-            {
-                throw new Exception("Paste not valid on method");
-            }
-            Type[] typeList = tag.GetTypeList();
-            Type type = typeof (DataSet).IsAssignableFrom(typeList[0]) ? typeof (DataSet) : typeof (object);
-            var serializer = new XmlSerializer(type, typeList);
-            var textReader = new StringReader((string) Clipboard.GetDataObject().GetData(DataFormats.Text));
-            object val = serializer.Deserialize(textReader);
-            if ((val == null) || !typeList[0].IsAssignableFrom(val.GetType()))
-            {
-                throw new Exception("Invalid Type pasted");
-            }
-            TreeNodeProperty property2 = TreeNodeProperty.CreateTreeNodeProperty(tag, val);
-            property2.TreeNode = tag.TreeNode;
-            property2.RecreateSubtree(null);
-            treeInput.SelectedNode = property2.TreeNode;
-        }
-
-        private void treeMethods_AfterSelect(object sender, TreeViewEventArgs e)
-        {
-            if (e.Node.Tag is MethodInfo)
-            {
-                var tag = e.Node.Tag as MethodInfo;
-                treeInput.Nodes.Clear();
-                var property = new MethodProperty(GetProxyPropertyFromNode(e.Node), tag);
-                property.RecreateSubtree(null);
-                treeInput.Nodes.Add(property.TreeNode);
-                e.Node.Tag = property.TreeNode;
-            }
-            else if (e.Node.Tag is TreeNode)
-            {
-                treeInput.Nodes.Clear();
-                treeInput.Nodes.Add((TreeNode) e.Node.Tag);
-            }
-            treeInput.ExpandAll();
-            treeInput.SelectedNode = treeInput.Nodes[0];
-        }
-
-        private void treeOutput_AfterSelect(object sender, TreeViewEventArgs e)
-        {
-            propOutput.SelectedObject = e.Node.Tag;
-            menuItemTreeOutputCopy.Enabled = IsValidCopyNode(e.Node.Tag as TreeNodeProperty);
-        }
-
-        private void treeOutputMenuCopy_Click(object sender, EventArgs e)
-        {
-            CopyToClipboard(treeOutput.SelectedNode.Tag as TreeNodeProperty);
-        }
-
-        private void treeWsdl_AfterSelect(object sender, TreeViewEventArgs e)
-        {
-            if ((e.Node.Tag != null) && (richWsdl.Tag != e.Node.Tag))
-            {
-                richWsdl.Text = e.Node.Tag.ToString();
-                richWsdl.Tag = e.Node.Tag;
-            }
-            var node = e.Node as XmlTreeNode;
-            if (node != null)
-            {
-                richWsdl.Select(node.StartPosition, node.EndPosition - node.StartPosition);
-            }
-        }
-
         private void WsdlGenerationDone(bool genDone)
         {
             buttonGet.Text = "Get";
@@ -1265,7 +1277,7 @@ namespace WebServiceStudio
                 textEndPointUri.Items.AddRange(Configuration.MasterConfig.InvokeSettings.RecentlyUsedUris);
             }
         }
+        #endregion
 
-        private delegate void WsdlGenerationDoneCallback(bool genDone);
     }
 }
